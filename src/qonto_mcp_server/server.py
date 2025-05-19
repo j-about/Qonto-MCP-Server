@@ -239,6 +239,48 @@ async def retrieve_a_beneficiary(id: str) -> Dict:
         return response.json()
 
 @mcp.tool()
+async def untrust_a_list_of_beneficiaries(ids: List[str]) -> Dict:
+    """
+    Untrusts up to 400 beneficiaries for the authenticated organization.
+
+    Note: This endpoint will be deprecated on March 31, 2026. For SEPA beneficiaries,
+    please use the Untrust SEPA beneficiaries endpoint instead. This endpoint
+    remains available for international beneficiaries until a new endpoint supporting
+    international beneficiary untrusting is released.
+
+    Args:
+        ids (List[str]): List of beneficiary IDs to untrust.
+            Example: ["ce91bc4e-68d6-4ab0-bfab-4a9403f7f316"]
+
+    Returns:
+        out(Dict): A dictionary containing the untrusted beneficiaries.
+        If there's an error, returns a dictionary with an 'error' key.
+    """
+    url = f"{BASE_URL}/beneficiaries/untrust"
+    
+    headers = {
+        "Authorization": API_KEY,
+        "Content-Type": "application/json"
+    }
+
+    if STAGING_TOKEN:
+        headers["X-Qonto-Staging-Token"] = STAGING_TOKEN
+    
+    payload = {
+        "ids": ids
+    }
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.patch(url, headers=headers, json=payload)
+            response.raise_for_status()
+        except Exception as e:
+            logger.exception("%s", e)
+            return {"error": str(e)}
+        
+        return response.json()
+
+@mcp.tool()
 async def list_sepa_beneficiaries(
     iban: Optional[List[str]] = None,
     status: Optional[List[str]] = None,
@@ -327,6 +369,47 @@ async def retrieve_a_sepa_beneficiary(id: str) -> Dict:
             return {"error": str(e)}
 
         return response.json()
+
+@mcp.tool()
+async def upload_an_attachment(file_path: str, idempotency_key: Optional[str] = None) -> Dict:
+    """
+    Uploads a single attachment (JPEG, PNG or PDF).
+
+    This operation will enable you to link the uploaded attachment to an external transfer
+    (through POST /v2/external_transfers or POST /v2/external_transfers/checkout).
+
+    Args:
+        file_path (str): Path to the file to upload (JPEG, PNG or PDF).
+        idempotency_key (Optional[str], optional): Optional. This endpoint supports idempotency for safely retrying
+            requests without accidentally performing the same operation twice.
+            Example: "4668ac59-4e5c-4e51-9d01-fc5c33c79ddd"
+
+    Returns:
+        out(Dict): A dictionary containing information about the uploaded attachment.
+        If there's an error, returns a dictionary with an 'error' key.
+    """
+    url = f"{BASE_URL}/attachments"
+
+    headers = {
+        "Authorization": API_KEY
+    }
+
+    if STAGING_TOKEN:
+        headers["X-Qonto-Staging-Token"] = STAGING_TOKEN
+
+    if idempotency_key:
+        headers["X-Qonto-Idempotency-Key"] = idempotency_key
+
+    try:
+        async with httpx.AsyncClient() as client:
+            with open(file_path, "rb") as file:
+                files = {"file": file}
+                response = await client.post(url, headers=headers, files=files)
+                response.raise_for_status()
+                return response.json()
+    except Exception as e:
+        logger.exception("%s", e)
+        return {"error": str(e)}
 
 @mcp.tool()
 async def retrieve_an_attachment(id: str) -> Dict:
@@ -537,6 +620,56 @@ async def retrieve_the_authenticated_organization_and_list_bank_accounts(
         return response.json()
 
 @mcp.tool()
+async def upload_an_attachment_to_a_transaction(
+    id: str, 
+    file_path: str, 
+    idempotency_key: Optional[str] = None
+) -> Dict:
+    """
+    Uploads a single attachment (JPEG, PNG or PDF) to the transaction identified by the id path parameter.
+
+    Note: The uploaded file will be processed in the background. This means that the
+    created attachment will not be visible immediately.
+
+    Args:
+        id (str): Identifies the transaction to which the attachment will be uploaded.
+            Example: "2731e51c-c37f-437f-b018-45efeac89a30"
+        file_path (str): Path to the file to upload (JPEG, PNG or PDF).
+        idempotency_key (Optional[str], optional): Optional. This API supports idempotency for safely retrying 
+            requests without accidentally performing the same operation twice.
+            Example: "4668ac59-4e5c-4e51-9d01-fc5c33c79ddd"
+
+    Returns:
+        out(Dict): An empty dictionary.
+        If there's an error, returns a dictionary with an 'error' key.
+    """
+    url = f"{BASE_URL}/transactions/{id}/attachments"
+
+    headers = {
+        "Authorization": API_KEY
+    }
+
+    if STAGING_TOKEN:
+        headers["X-Qonto-Staging-Token"] = STAGING_TOKEN
+
+    if idempotency_key:
+        headers["X-Qonto-Idempotency-Key"] = idempotency_key
+
+    try:
+        async with httpx.AsyncClient() as client:
+            with open(file_path, "rb") as file:
+                files = {"file": file}
+                response = await client.post(url, headers=headers, files=files)
+                response.raise_for_status()
+                try:
+                    return response.json()
+                except Exception:
+                    return {"status": "success", "status_code": response.status_code}
+    except Exception as e:
+        logger.exception("%s", e)
+        return {"error": str(e)}
+
+@mcp.tool()
 async def list_attachments_for_a_transaction(
     id: str, 
     page: Optional[str] = None,
@@ -587,6 +720,83 @@ async def list_attachments_for_a_transaction(
             return {"error": str(e)}
 
         return response.json()
+
+@mcp.tool()
+async def remove_an_attachment_from_a_transaction(
+    transaction_id: str,
+    attachment_id: str
+) -> Dict:
+    """
+    Removes a single attachment from the transaction identified by the id path parameter.
+
+    In the Qonto app, attachments are files uploaded onto transactions by users.
+    Attachments typically correspond to the invoice or receipt, and are used to
+    justify the transactions from a bookkeeping standpoint.
+
+    Args:
+        transaction_id (str): The ID of the transaction. Example: "644cf847-125e-4ec9-92bb-8d99aee6dbc"
+        attachment_id (str): The ID of the attachment to remove.
+
+    Returns:
+        out(Dict): Returns {"status": "success", "status_code": ...} on success.
+        If there's an error, returns a dictionary with an 'error' key.
+    """
+    url = f"{BASE_URL}/transactions/{transaction_id}/attachments/{attachment_id}"
+
+    headers = {
+        "Authorization": API_KEY,
+        "Content-Type": "application/json"
+    }
+
+    if STAGING_TOKEN:
+        headers["X-Qonto-Staging-Token"] = STAGING_TOKEN
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(url, headers=headers)
+            response.raise_for_status()
+            try:
+                return response.json()
+            except Exception:
+                return {"status": "success", "status_code": response.status_code}
+    except Exception as e:
+        logger.exception("%s", e)
+        return {"error": str(e)}
+
+@mcp.tool()
+async def remove_all_attachments_from_a_transaction(id: str) -> Dict:
+    """
+    Removes all attachments from the transaction identified by the id path parameter.
+
+    Args:
+        id (str): Identifies the transaction from which all attachments will be removed.
+            Example: "275bad5e-6cb4-409e-88a8-ab4336a3bd57"
+
+    Returns:
+        out(Dict): An empty dictionary.
+        If there's an error, returns a dictionary with an 'error' key.
+    """
+    url = f"{BASE_URL}/transactions/{id}/attachments"
+
+    headers = {
+        "Authorization": API_KEY,
+        "Content-Type": "application/json"
+    }
+
+    if STAGING_TOKEN:
+        headers["X-Qonto-Staging-Token"] = STAGING_TOKEN
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(url, headers=headers)
+            response.raise_for_status()
+            try:
+                return response.json()
+            except Exception:
+                return {"status": "success", "status_code": response.status_code}
+    except Exception as e:
+        logger.exception("%s", e)
+        return {"error": str(e)}
 
 @mcp.tool()
 async def list_transactions(
@@ -723,6 +933,65 @@ async def retrieve_a_transaction(
             return {"error": str(e)}
         
         return response.json()
+
+@mcp.tool()
+async def create_an_internal_transfer(
+    debit_iban: str,
+    credit_iban: str,
+    reference: str,
+    amount: str,
+    currency: str = "EUR",
+    idempotency_key: Optional[str] = None
+) -> dict:
+    """
+    Creates a single instant transfer between 2 bank accounts of the authenticated organization.
+
+    You can obtain the bank accounts' IBAN through the GET /organization endpoint.
+
+    Args:
+        debit_iban (str): IBAN of account to debit.
+        credit_iban (str): IBAN of account to credit.
+        reference (str): Details to further describe the transfer (max 90 chars).
+        amount (str): Amount of the transaction as a valid decimal monetary value.
+        currency (str, optional): Only accepts "EUR". Default is "EUR".
+        idempotency_key (Optional[str], optional): For safely retrying requests 
+            without accidentally performing the same operation twice.
+
+    Returns:
+        out(Dict): The created internal transfer object.
+        If there's an error, returns a dictionary with an 'error' key.
+    """
+    url = f"{BASE_URL}/internal_transfers"
+
+    headers = {
+        "Authorization": API_KEY,
+        "Content-Type": "application/json"
+    }
+
+    if STAGING_TOKEN:
+        headers["X-Qonto-Staging-Token"] = STAGING_TOKEN
+
+    if idempotency_key:
+        headers["X-Qonto-Idempotency-Key"] = idempotency_key
+
+    payload = {
+        "internal_transfer": {
+            "debit_iban": debit_iban,
+            "credit_iban": credit_iban,
+            "reference": reference,
+            "amount": amount,
+            "currency": currency
+        }
+    }
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.exception("%s", e)
+            return {"error": str(e)}
 
 @mcp.tool()
 async def list_requests(
@@ -1063,6 +1332,93 @@ async def retrieve_a_credit_note(id: str) -> dict:
             return {"error": str(e)}
 
         return response.json()
+
+@mcp.tool()
+async def create_a_client(
+    name: str,
+    type: str,
+    email: str,
+    first_name: Optional[str] = None,
+    last_name: Optional[str] = None,
+    vat_number: Optional[str] = None,
+    tax_identification_number: Optional[str] = None,
+    address: Optional[str] = None,
+    city: Optional[str] = None,
+    zip_code: Optional[str] = None,
+    province_code: Optional[str] = None,
+    country_code: Optional[str] = None,
+    billing_address: Optional[dict] = None,
+    delivery_address: Optional[dict] = None
+) -> dict:
+    """
+    Creates a single client for the authenticated organization.
+
+    Args:
+        name (str): Name of the client. Required if type is company.
+        type (str): Client type. 'individual', 'company', or 'freelancer'.
+        email (str): E-mail address of the client.
+        first_name (str, optional): First name. Required if type is individual or freelancer.
+        last_name (str, optional): Last name. Required if type is individual or freelancer.
+        vat_number (str, optional): Client's VAT number.
+        tax_identification_number (str, optional): Client's Tax ID.
+        address (str, optional): Address of the client.
+        city (str, optional): City.
+        zip_code (str, optional): Zip code. For Italy, must be 5 chars.
+        province_code (str, optional): Province code. Required for Italian orgs.
+        country_code (str, optional): ISO 3166-1 alpha-2 country code.
+        billing_address (dict, optional): Billing address.
+        delivery_address (dict, optional): Delivery address.
+
+    Returns:
+        out(Dict): A dictionary containing the created client.
+        If there's an error, returns a dictionary with an 'error' key.
+    """
+    url = f"{BASE_URL}/clients"
+
+    headers = {
+        "Authorization": API_KEY,
+        "Content-Type": "application/json"
+    }
+
+    if STAGING_TOKEN:
+        headers["X-Qonto-Staging-Token"] = STAGING_TOKEN
+
+    payload = {
+        "name": name,
+        "type": type,
+        "email": email
+    }
+    if first_name:
+        payload["first_name"] = first_name
+    if last_name:
+        payload["last_name"] = last_name
+    if vat_number:
+        payload["vat_number"] = vat_number
+    if tax_identification_number:
+        payload["tax_identification_number"] = tax_identification_number
+    if address:
+        payload["address"] = address
+    if city:
+        payload["city"] = city
+    if zip_code:
+        payload["zip_code"] = zip_code
+    if province_code:
+        payload["province_code"] = province_code
+    if country_code:
+        payload["country_code"] = country_code
+    if billing_address:
+        payload["billing_address"] = billing_address
+    if delivery_address:
+        payload["delivery_address"] = delivery_address
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            return response.json()
+    except Exception as e:
+        logger.exception("%s", e)
+        return {"error": str(e)}
 
 @mcp.tool()
 async def list_clients(

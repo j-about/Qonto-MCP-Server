@@ -1,6 +1,6 @@
 [project]
 name = "qonto-mcp-server"
-version = "0.1.0"
+version = "0.1.1"
 description = "MCP Server for the Qonto API."
 authors = [
     { name = "j-about", email = "142051449+j-about@users.noreply.github.com" }
