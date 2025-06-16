@@ -46,7 +46,7 @@ Add this to your `claude_desktop_config.json`:
 
 ```json
 "mcpServers": {
-  "git": {
+  "qonto-mcp-server": {
     "command": "python",
     "args": ["-m", "qonto-mcp-server", "--api-key", "API_LOGIN:API_SECRET_KEY"]
   }
